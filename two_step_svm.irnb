@@ -1,0 +1,378 @@
+{
+  "cells": [
+    {
+      "metadata": {
+        "_uuid": "6b27e5d05f35099f78d6375b9caa2a7020e2336a",
+        "_execution_state": "idle",
+        "trusted": true
+      },
+      "cell_type": "code",
+      "source": "## Importing packages\n\n# This R environment comes with all of CRAN and many other helpful packages preinstalled.\n# You can see which packages are installed by checking out the kaggle/rstats docker image: \n# https://github.com/kaggle/docker-rstats\n\nlibrary(tidyverse) # metapackage with lots of helpful functions\nlibrary(lattice)\nlibrary(caret)\nlibrary(e1071)\n\n## Running code\n\n# In a notebook, you can run a single code cell by clicking in the cell and then hitting \n# the blue arrow to the left, or by clicking in the cell and pressing Shift+Enter. In a script, \n# you can run code by highlighting the code you want to run and then clicking the blue arrow\n# at the bottom of this window.\n\n## Reading in files\n\n# You can access files from datasets you've added to this kernel in the \"../input/\" directory.\n# You can see the files added to this kernel by running the code below. \n\nlist.files(path = \"../input\")\n\n## Saving data\n\n# If you save any files or images, these will be put in the \"output\" directory. You \n# can see the output directory by committing and running your kernel (using the \n# Commit & Run button) and then checking out the compiled version of your kernel.",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "80edad8c6a62b9e606ce28abe9de0e4ae07c3468"
+      },
+      "cell_type": "code",
+      "source": "training = read.csv(\"../input/trialPromoResults.csv\")\ntest = read.csv(\"../input/custdatabase.csv\")\ntruth = read.csv(\"../input/Cust_Actual.csv\")",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "7fcae7dbefdc287b9dc31c05c26ca6a93b414e20"
+      },
+      "cell_type": "code",
+      "source": "# Training set\nhead(training)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "2717128bfa9a5a7cdccd9f7752450bf1b878dcec"
+      },
+      "cell_type": "code",
+      "source": "# Test set\ntest <- test[,-11]\nhead(test)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "043d9d4a06753d4099db342c7faab074ad9e0556"
+      },
+      "cell_type": "code",
+      "source": "# Ground truth\nhead(truth)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "_uuid": "05cc31110295959e8286b4dd80aac930d5edddcb"
+      },
+      "cell_type": "markdown",
+      "source": "## Data Pre-processing"
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "12e511214c36e9cd36249c8483c34fa7f0b5f93d"
+      },
+      "cell_type": "code",
+      "source": "# log-transform on train and test numeric data\ntraining$age <- log(training$age)\ntraining$income <- log(training$income)\ntraining$avbal <- log(training$avbal)\ntraining$avtrans <- log(training$avtrans)\n\ntest$age <- log(test$age)\ntest$income <- log(test$income)\ntest$avbal <- log(test$avbal)\ntest$avtrans <- log(test$avtrans)\n\ncont <- subset(training, select=c(4,5,8,9,10))\nsd_cont <- apply(cont,2,sd)\nmean_cont <- apply(cont,2,mean)\n\n# Normalization on train set numeric data\ntraining$age <- scale(training$age)\ntraining$children <- scale(training$children)\ntraining$income <- scale(training$income)\ntraining$avbal <- scale(training$avbal)\ntraining$avtrans <- scale(training$avtrans)\n\n# Normalization on test set numeric data\ntest$age <- (test$age - mean_cont['age']) / sd_cont['age']\ntest$children <- (test$children - mean_cont['children']) / sd_cont['children']\ntest$income <- (test$income - mean_cont['income']) / sd_cont['income']\ntest$avbal <- (test$avbal - mean_cont['avbal']) / sd_cont['avbal']\ntest$avtrans <- (test$avtrans - mean_cont['avtrans']) / sd_cont['avtrans']",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "3e56777d3641f495e6815f66cf801bbcf9996ee2"
+      },
+      "cell_type": "code",
+      "source": "head(training)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "4dffed8f0c484afcb1ad0edc87017802e9074c7a"
+      },
+      "cell_type": "code",
+      "source": "library(lattice)\nlibrary(caret)\n\n# Train and validation split\ninTrain = createDataPartition(training$decision, p = 0.05, list = FALSE)\nval <- training[inTrain,]\ntrain <- training[-inTrain,]",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "_uuid": "a9280ed7b5026c720449df2c927f4e22ef324103"
+      },
+      "cell_type": "markdown",
+      "source": "## Modelling"
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "01fb1a99465bd9351e7d98b2d3c3274230558738"
+      },
+      "cell_type": "code",
+      "source": "x <- subset(train, select=-decision)\ny <- train$decision\n\nx_val <- subset(val, select=-decision)\ny_val <- val$decision\n\nx_test <- subset(test, select=-index)\ny_test <- truth$status",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "f1f2cf2c18c837d914a71e653f5bff9066dea029"
+      },
+      "cell_type": "code",
+      "source": "# Train set one-hot encoding for categorical features\ndmy <- dummyVars(\" ~ .\", data = x)\ntrsf <- data.frame(predict(dmy, newdata = x))\nx <- subset(trsf, select=-index)\n\n# Validation set one-hot encoding for categorical features\ndmy <- dummyVars(\" ~ .\", data = x_val)\ntrsf <- data.frame(predict(dmy, newdata = x_val))\nx_val <- subset(trsf, select=-index)\n\n# Test set one-hot encoding for categorical features\ndmy <- dummyVars(\" ~ .\", data = x_test)\ntrsf <- data.frame(predict(dmy, newdata = x_test))\nx_test <- trsf",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "e9581591d5ce8d72d62ced31da03a3b6ec4b19d3"
+      },
+      "cell_type": "code",
+      "source": "head(x)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "bc8ed27119f247a91d906a73c2e9817f1f72092f"
+      },
+      "cell_type": "code",
+      "source": "head(x_val)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "e0bf99351a382ea7d4dab1362414859e0a1fa5ea"
+      },
+      "cell_type": "code",
+      "source": "head(x_test)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "73b84d15b4d7fdcfd05c6b1d401dfffc9a54ac85"
+      },
+      "cell_type": "code",
+      "source": "y_bin <- as.character(y)\ny_bin[y_bin != \"None\"] <- \"Yes\"\ny_bin <- as.factor(y_bin)\n\ny_val_bin <- as.character(y_val)\ny_val_bin[y_val_bin != \"None\"] <- \"Yes\"\ny_val_bin <- as.factor(y_val_bin)\n\ny_test_bin <- as.character(y_test)\ny_test_bin[y_test_bin != \"None\"] <- \"Yes\"\ny_test_bin <- as.factor(y_test_bin)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "b9350f7a646cd786dfff4501086a103f1be4fda5"
+      },
+      "cell_type": "code",
+      "source": "library(DMwR)\n\nx$decision <- y_bin\nnewData <- SMOTE(decision ~ ., x, perc.over=500, perc.under=100)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "_uuid": "c7960e044cc797fffe8a65fe738b1c49e316ffd2"
+      },
+      "cell_type": "markdown",
+      "source": "### SVM 1"
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "37782d13ec8869f406887a0bba7337cc5c9e8605"
+      },
+      "cell_type": "code",
+      "source": "x_train <- subset(newData, select=-decision)\ny_train <- newData$decision",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "1dcff4905ea25301de006f244ef11b624eeaefd8"
+      },
+      "cell_type": "code",
+      "source": "svm_tune <- tune(svm, train.x=x_train, train.y=y_train, \n                 ranges = list(kernel=c(\"radial\"),\n                               gamma=c(0.01,0.05,0.1,0.5,1,5,10), \n                               cost=c(1,10,100)\n                               ), \n                 class.weights=c(\"None\"=2, \"Yes\"=1), \n                 tunecontrol = tune.control(cross=5))\n\nprint(svm_tune)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "184c93606acb4d6923556845817a97f51514eba7"
+      },
+      "cell_type": "code",
+      "source": "svm_model_after_tune <- svm(y_train ~ ., data=x_train, kernel=\"radial\", \n                            class.weights=c(\"None\"=2, \"Yes\"=1), \n                            gamma=0.5, cost=100)\npred <- predict(svm_model_after_tune, x)\ntable(y_bin,pred)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "3fe2c0c6ead35351f10baa95384d7c34e5bf6cbc"
+      },
+      "cell_type": "code",
+      "source": "# Confusion matrix for validation set\npred_val <- predict(svm_model_after_tune, x_val)\ntable(y_val_bin,pred_val)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "33d6454092d328a869b6f7b13154cb9cae3f519d"
+      },
+      "cell_type": "code",
+      "source": "# Confusion matrix for test set\npred_test <- predict(svm_model_after_tune, x_test)\ntable(y_test_bin,pred_test)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "5e8f39810a090db1fb76ef5bf68b002f59df50e8"
+      },
+      "cell_type": "markdown",
+      "source": "### SVM 2"
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "d5023d439f56a0fac84f1a5218c3e8bb14e7d616"
+      },
+      "cell_type": "code",
+      "source": "x$decision <- y\nx_train2 <- x[x$decision!=\"None\",]\ny_train2 <- x_train2$decision\nx_train2 <- subset(x_train2, select=-decision)\nx_train2 <- subset(x_train2, select=-mstatus.widowed)\n\nx_val$decision <- y_val\nx_val2 <- x_val[x_val$decision!=\"None\",]\ny_val2 <- x_val2$decision\nx_val2 <- subset(x_val2, select=-decision)\nx_val2 <- subset(x_val2, select=-mstatus.widowed)\n\nx_test$decision <- y_test\nx_test2 <- x_test[x_test$decision!=\"None\",]\ny_test2 <- x_test2$decision\nx_test2 <- subset(x_test2, select=-decision)\nx_test2 <- subset(x_test2, select=-mstatus.widowed)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "371e947d50067be890bcb6e70516058b1a1a69cf"
+      },
+      "cell_type": "code",
+      "source": "svm_tune2 <- tune(svm, train.x=x_train2, train.y=y_train2, \n                 ranges = list(kernel=c(\"radial\"),\n                               gamma=c(0.01,0.05,0.1,0.5,1,5,10), \n                               cost=c(1,10,100)\n                               ), \n                 tunecontrol = tune.control(cross=3))\n\nprint(svm_tune2)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "b1356b06322c1e427bf526314b6bff3f5e698918"
+      },
+      "cell_type": "code",
+      "source": "svm_model_after_tune2 <- svm(y_train2 ~ ., data=x_train2, kernel=\"radial\", \n                            gamma=0.01, cost=1)\npred2 <- predict(svm_model_after_tune2, x_train2)\ntable(y_train2, pred2)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "3fb21501e1a319fa6a9755c2f6efa523e5d9b3a3"
+      },
+      "cell_type": "code",
+      "source": "# Confusion matrix for validation set\npred_val2 <- predict(svm_model_after_tune2, x_val2)\ntable(y_val2,pred_val2)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "846bd43538a41c047b49349b747ae07b4ec25bed"
+      },
+      "cell_type": "code",
+      "source": "# Confusion matrix for test set\npred_test2 <- predict(svm_model_after_tune2, x_test2)\ntable(y_test2,pred_test2)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "_uuid": "98d17c83b3e86c715fef1f7e1b8112e6718a5cfe"
+      },
+      "cell_type": "markdown",
+      "source": "### All-for-one"
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "1235bd67c21b88947cf554bf8121bd52fb846541"
+      },
+      "cell_type": "code",
+      "source": "x_test$yes.no <- predict(svm_model_after_tune, x_test)\nx_test$A.B <- predict(svm_model_after_tune2, x_test)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "d91d91a5b8955526881b019058d10a20f5e37676"
+      },
+      "cell_type": "code",
+      "source": "head(x_test, n=10)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "3c30851ff3536b229213f30698150b156534d708"
+      },
+      "cell_type": "code",
+      "source": "x_test$predict <- x_test$yes.no",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "877d62c09e14bac9f6c353ca9f3fd9446a960ccb"
+      },
+      "cell_type": "code",
+      "source": "truth$yes.no <- x_test$yes.no\ntruth$A.B <- x_test$A.B",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "984f9a749b1b2a11048532358268aa22c6ea6aed"
+      },
+      "cell_type": "code",
+      "source": "head(truth)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "74b63c8af33db8e9dc4c3b12347c5b90b53d83ee"
+      },
+      "cell_type": "code",
+      "source": "write.csv(truth, file = \"predict7.csv\")",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "f44d2b6be6f87e927cd253cb4460fc65cdd8ed2d"
+      },
+      "cell_type": "code",
+      "source": "",
+      "execution_count": null,
+      "outputs": []
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "display_name": "R",
+      "language": "R",
+      "name": "ir"
+    },
+    "language_info": {
+      "mimetype": "text/x-r-source",
+      "name": "R",
+      "pygments_lexer": "r",
+      "version": "3.4.2",
+      "file_extension": ".r",
+      "codemirror_mode": "r"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 1
+}
